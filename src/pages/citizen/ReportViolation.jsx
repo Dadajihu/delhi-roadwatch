@@ -2,10 +2,11 @@
    Delhi RoadWatch — Report Violation (2026 SaaS Redesign)
    ────────────────────────────────────────────── */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { createReport, CRIME_TYPES, STATUS, nextReportId } from '../../data/db';
+import { SUPPORTED_LANGUAGES, speechToText, chatWithLegalBot } from '../../services/sarvamService';
 import { processReport } from '../../services/aiEngine';
 
 // Icon map for violation types
@@ -33,6 +34,117 @@ export default function ReportViolation() {
     const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
     const [submittedId, setSubmittedId] = useState('');
     const [submitting, setSubmitting] = useState(false);
+
+    // Voice-to-Report state
+    const [voiceMode, setVoiceMode] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const [selectedLang, setSelectedLang] = useState('hi-IN');
+    const [voiceError, setVoiceError] = useState('');
+
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const timerRef = useRef(null);
+
+    // Cleanup recording on unmount
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop();
+            }
+        };
+    }, []);
+
+    const startRecording = async () => {
+        setVoiceError('');
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : 'audio/webm';
+            const recorder = new MediaRecorder(stream, { mimeType });
+            mediaRecorderRef.current = recorder;
+            audioChunksRef.current = [];
+
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+
+            recorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+                await transcribeAudioCore(audioBlob);
+            };
+
+            recorder.start(250); // collect data every 250ms
+            setIsRecording(true);
+            setRecordingTime(0);
+            timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+        } catch (err) {
+            if (err.name === 'NotAllowedError') {
+                setVoiceError('Microphone access denied. Please allow microphone permission in your browser.');
+            } else {
+                setVoiceError('Could not access microphone. Please try again.');
+            }
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        clearInterval(timerRef.current);
+        setIsRecording(false);
+    };
+
+    const transcribeAudioCore = async (audioBlob) => {
+        setIsTranscribing(true);
+        setVoiceError('');
+        try {
+            // Use Sarvam AI STT
+            const { transcript } = await speechToText(audioBlob, selectedLang);
+
+            if (transcript) {
+                setComments(prev => prev ? `${prev}
+${transcript}` : transcript);
+                
+                // Categorize automatically
+                try {
+                    const prompt = `Classify the following traffic violation report into exactly one of these categories:
+['Signal Jumping', 'Illegal Parking', 'No Helmet', 'Triple Riding', 'Wrong Side Driving', 'Overspeeding', 'Dangerous Driving', 'Blocking Road', 'Other'].
+Report: "${transcript}"
+Output ONLY the category name.`;
+                    
+                    const { reply } = await chatWithLegalBot([{ role: "user", content: prompt }]);
+                    const category = reply.trim();
+                    if (CRIME_TYPES.includes(category)) {
+                        setCrimeType(category);
+                    } else {
+                        const matched = CRIME_TYPES.find(c => category.includes(c));
+                        if(matched) setCrimeType(matched);
+                        else setCrimeType('Other');
+                    }
+                } catch(e) {
+                    console.error("Categorization failed", e);
+                }
+            } else {
+                setVoiceError('No speech detected. Please try again.');
+            }
+        } catch (err) {
+            setVoiceError(err.message || 'Transcription failed. Please try again.');
+        } finally {
+            setIsTranscribing(false);
+        }
+    };
+
+    const formatTime = (secs) => {
+        const m = Math.floor(secs / 60).toString().padStart(2, '0');
+        const s = (secs % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    };
+
 
     // Auto-fetch location & update clock
     useEffect(() => {

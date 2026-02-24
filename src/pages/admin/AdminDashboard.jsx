@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { fetchReports, fetchAllAiAnalysis, updateReportStatus, updateCaseStatus, deleteReport, STATUS } from '../../data/db';
 import { notifyOwner } from '../../services/notificationService';
+import { textToSpeech, translateText, playBase64Audio, SUPPORTED_LANGUAGES } from '../../services/sarvamService';
 
 /* ── Helpers ── */
 
@@ -97,6 +98,12 @@ export default function AdminDashboard() {
     const [actionLoading, setActionLoading] = useState({});
     const [previewMedia, setPreviewMedia] = useState(null);
 
+    // Feature states
+    const [playingId, setPlayingId] = useState(null);
+    const [translatingId, setTranslatingId] = useState(null);
+    const [translations, setTranslations] = useState({}); // { reportId: { text, lang, srcLang, isOriginal } }
+    const [srcLangs, setSrcLangs] = useState({}); // { reportId: langCode } — source language per report
+
     const loadData = async () => {
         setLoading(true);
         try {
@@ -112,6 +119,52 @@ export default function AdminDashboard() {
     useEffect(() => { loadData(); }, []);
 
     const toggleExpand = (id) => setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }));
+
+    // ── Feature 2: TTS ───────────────────────────────────────────────────────
+    const handleReadAloud = async (report, ai) => {
+        if (playingId === report.report_id) return;
+        setPlayingId(report.report_id);
+
+        try {
+            const summaryText = `Report summary for code ${report.report_id.slice(-6)}. Violation: ${report.crime_type}. Status: ${report.status}. AI priority score: ${ai ? getPriorityScore(report, ai) : 'Standard'}. ${report.comments ? `Citizen remarks: ${report.comments}` : ''}`;
+
+            const { audioBase64 } = await textToSpeech(summaryText, 'en-IN');
+            const audio = playBase64Audio(audioBase64);
+
+            audio.onended = () => setPlayingId(null);
+            audio.onerror = () => setPlayingId(null);
+        } catch (err) {
+            console.error("TTS Error:", err);
+            alert("Audio playback failed: " + err.message);
+            setPlayingId(null);
+        }
+    };
+
+    // ── Feature 3: Translation ───────────────────────────────────────────────
+    const handleTranslate = async (reportId, text, targetLang) => {
+        if (!text) return;
+        const srcLang = srcLangs[reportId] || 'en-IN';
+        setTranslatingId(reportId);
+        try {
+            const { translated_text } = await translateText(text, srcLang, targetLang);
+            setTranslations(prev => ({
+                ...prev,
+                [reportId]: { text: translated_text, lang: targetLang, srcLang, isOriginal: false }
+            }));
+        } catch (err) {
+            console.error("Translation Error:", err);
+            alert("Translation failed: " + err.message);
+        } finally {
+            setTranslatingId(null);
+        }
+    };
+
+    const toggleOriginal = (reportId) => {
+        setTranslations(prev => ({
+            ...prev,
+            [reportId]: { ...prev[reportId], isOriginal: !prev[reportId].isOriginal }
+        }));
+    };
 
     const counts = {
         all: reports.length,
@@ -364,15 +417,82 @@ export default function AdminDashboard() {
 
                                             {/* User Comment + Location */}
                                             <div style={{ background: 'white', borderRadius: '16px', padding: '18px', border: '1px solid var(--border-color)' }}>
-                                                <div style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <span>💬</span> Citizen Report
+                                                <div style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <span>💬</span> Citizen Report
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        {/* TTS Button */}
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleReadAloud(report, ai); }}
+                                                            title="Read Aloud"
+                                                            className="btn-icon"
+                                                            style={{
+                                                                background: playingId === report.report_id ? 'var(--primary)' : 'var(--primary-light)',
+                                                                color: playingId === report.report_id ? 'white' : 'var(--primary)',
+                                                                padding: '4px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            {playingId === report.report_id ? '⏹' : '🔊'}
+                                                        </button>
+
+                                                        {/* Translate Dropdown */}
+                                                        <div style={{ position: 'relative' }}>
+                                                            <button
+                                                                title="Translate"
+                                                                className="btn-icon"
+                                                                style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '4px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
+                                                                onClick={(e) => { e.stopPropagation(); }}
+                                                            >
+                                                                🌐
+                                                            </button>
+                                                            <div className="translate-popover">
+                                                                {/* Source language selector */}
+                                                                <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color)', marginBottom: '4px' }}>
+                                                                    <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Report Written In</div>
+                                                                    <select
+                                                                        value={srcLangs[report.report_id] || 'en-IN'}
+                                                                        onChange={(e) => { e.stopPropagation(); setSrcLangs(prev => ({ ...prev, [report.report_id]: e.target.value })); }}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        style={{ width: '100%', fontSize: '12px', fontWeight: 600, padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'white' }}
+                                                                    >
+                                                                        {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+                                                                            <option key={code} value={code}>{name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div style={{ padding: '4px 0', fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', paddingLeft: '12px', marginBottom: '2px' }}>Translate To</div>
+                                                                {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+                                                                    <div key={code} onClick={() => handleTranslate(report.report_id, report.comments, code)} style={{ padding: '6px 12px', cursor: 'pointer' }}>
+                                                                        {name}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                {cleanComment ? (
-                                                    <p style={{ fontSize: '14px', lineHeight: 1.65, color: 'var(--text-primary)', fontWeight: 500, margin: 0 }}>
-                                                        {cleanComment}
-                                                    </p>
+                                                
+                                                {translatingId === report.report_id ? (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 600 }}>
+                                                        <div className="sarvam-spinner-small"></div> Translating...
+                                                    </div>
                                                 ) : (
-                                                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>No written comment provided.</p>
+                                                    <>
+                                                        <p style={{ fontSize: '14px', lineHeight: 1.65, color: 'var(--text-primary)', fontWeight: 500, margin: 0 }}>
+                                                            {translation && !translation.isOriginal ? translation.text : (cleanComment || 'No written comment provided.')}
+                                                        </p>
+                                                        {translation && (
+                                                            <button
+                                                                onClick={() => toggleOriginal(report.report_id)}
+                                                                style={{
+                                                                    display: 'block', marginTop: '8px', fontSize: '11px', fontWeight: 800,
+                                                                    color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                {translation.isOriginal ? `Show ${SUPPORTED_LANGUAGES[translation.lang]} Translation` : 'Show Original (English)'}
+                                                            </button>
+                                                        )}
+                                                    </>
                                                 )}
 
                                                 {(lat && lng) && (
