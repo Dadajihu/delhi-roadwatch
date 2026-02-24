@@ -307,15 +307,24 @@ h3 {
     padding-top: var(--space-24) !important;
   }
 
-  h1,
-  h2,
-  h3 {
+  /* Center headings globally, except admin dashboard card internals */
+  h1:not(.admin-page-header *),
+  h2:not(.admin-page-header *),
+  h3:not(.admin-page-header *) {
     margin-top: var(--space-24);
     margin-bottom: var(--space-16) !important;
     text-align: center;
   }
 
-  .btn {
+  .admin-page-header h1,
+  .admin-page-header h2,
+  .admin-page-header h3 {
+    margin-top: 0;
+    text-align: center;
+  }
+
+  /* Full-width on mobile — but not role-switcher tabs inside login card */
+  .btn:not(.role-tab) {
     width: 100%;
     min-height: 54px;
     padding: 16px 20px;
@@ -329,7 +338,8 @@ h3 {
     border-radius: var(--radius-md);
   }
 
-  .card {
+  /* Only center standalone top-level cards, not nested admin panels */
+  .card:not(.admin-card-inner) {
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -349,6 +359,151 @@ h3 {
   .text-hero {
     font-size: 30px;
     text-align: center;
+  }
+}
+
+/* ── Admin Dashboard Responsive Layout ── */
+
+/* Page header: centered on all screens */
+.admin-page-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.admin-page-header h1 {
+  margin-top: 0;
+  margin-bottom: 6px !important;
+  text-align: center;
+}
+
+.admin-page-header p {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.admin-header-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Filter tab row */
+.admin-filter-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  padding: 4px;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+}
+
+.admin-filter-tab {
+  flex: 1;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 13px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+/* Card compact header grid */
+.admin-card-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+/* Score bars row */
+.admin-score-bars {
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+}
+
+/* Expanded two-column grid */
+.admin-expanded-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+/* Right column separator */
+.admin-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-left: 1px solid var(--border-color);
+  padding-left: 24px;
+}
+
+/* ── Mobile overrides ── */
+@media (max-width: 640px) {
+
+  /* Card header: rank+toggle on top row, crime+status below */
+  .admin-card-header {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 8px;
+  }
+
+  /* Crime+time cell spans full width on row 2 */
+  .admin-card-crime {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  /* Status moves next to rank on row 1 */
+  .admin-card-status {
+    order: 2;
+  }
+
+  /* Toggle stays top-right */
+  .admin-card-toggle {
+    order: 1;
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  /* Score bars stack */
+  .admin-score-bars {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Expanded grid: single column, right col loses left border */
+  .admin-expanded-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-right-col {
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    padding-left: 0;
+    padding-top: 18px;
+  }
+
+  /* Filter tabs: wrap into 2 rows of 3 */
+  .admin-filter-tab {
+    min-width: calc(33% - 8px);
+    font-size: 10px;
+    padding: 8px 6px;
   }
 }
 

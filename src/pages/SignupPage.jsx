@@ -30,13 +30,13 @@ export default function SignupPage() {
         const result = await signup(name, email, phone, aadhaar, password);
         if (result.success) {
             if (result.needEmailConfirm) {
-                setSuccessMsg('Civic Profile registered securely. Please check your email inbox to verify and activate your identity.');
+                setSuccessMsg(result.message || 'Account created! Please check your email to confirm your address, then log in.');
                 setName(''); setEmail(''); setPhone(''); setAadhaar(''); setPassword(''); setConfirm('');
             } else {
                 navigate('/citizen');
             }
         } else {
-            setError(result.error);
+            setError(result.error || 'Signup failed. Please try again.');
         }
         setSubmitting(false);
     };

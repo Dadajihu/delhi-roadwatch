@@ -8,6 +8,19 @@ import { useAuth } from '../../context/AuthContext';
 import { createReport, CRIME_TYPES, STATUS, nextReportId } from '../../data/db';
 import { processReport } from '../../services/aiEngine';
 
+// Icon map for violation types
+const CRIME_ICONS = {
+    'Signal Jumping': '🚦',
+    'Illegal Parking': '🚫',
+    'No Helmet': '⛑️',
+    'Triple Riding': '🛵',
+    'Wrong Side Driving': '⬅️',
+    'Overspeeding': '⚡',
+    'Dangerous Driving': '⚠️',
+    'Blocking Road': '🚧',
+    'Other': '📋',
+};
+
 export default function ReportViolation() {
     const { currentUser } = useAuth();
     const navigate = useNavigate();
@@ -72,15 +85,16 @@ export default function ReportViolation() {
 
             await createReport(reportData);
 
-            const firstImage = mediaFiles.find(m => m.type.startsWith('image'))?.file;
-            try {
-                await processReport(reportData, firstImage);
-            } catch (aiErr) {
-                console.error("Non-critical AI Error:", aiErr);
-            }
-
+            // Show success IMMEDIATELY — don't wait for AI
             setSubmittedId(reportId);
             setStep('confirmed');
+
+            // Run AI processing in the BACKGROUND (non-blocking)
+            const firstImage = mediaFiles.find(m => m.type.startsWith('image'))?.file;
+            processReport(reportData, firstImage).catch(err => {
+                console.error("Background AI Error (non-critical):", err);
+            });
+
         } catch (error) {
             console.error("Submission Error:", error);
             alert("Digital sync failed. Please check your connection.");
@@ -128,39 +142,93 @@ export default function ReportViolation() {
                     </p>
                 </div>
 
+                {/* ── Camera / Upload Options ── */}
                 <div style={{
-                    border: '2px dashed #E2E8F0',
                     borderRadius: '24px',
-                    padding: 'var(--space-40) var(--space-24)',
                     background: 'white',
-                    marginBottom: 'var(--space-40)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 'var(--space-24)'
+                    border: '1px solid var(--border-color)',
+                    marginBottom: 'var(--space-24)',
+                    overflow: 'hidden'
                 }}>
-                    <div style={{ display: 'flex', gap: '16px' }}>
-                        <label className="card" style={{ flex: 1, padding: '24px', textAlign: 'center', cursor: 'pointer', border: '1px solid #F1F5F9', borderRadius: '20px', transition: 'all 0.2s ease', boxShadow: 'none' }}>
-                            <div style={{ fontSize: '28px', color: 'var(--primary)', marginBottom: '12px' }}>📷</div>
-                            <div style={{ fontWeight: 800, fontSize: '14px', color: '#1E293B' }}>Photo</div>
-                            <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileUpload(e, 'live')} style={{ display: 'none' }} />
-                        </label>
-                        <label className="card" style={{ flex: 1, padding: '24px', textAlign: 'center', cursor: 'pointer', border: '1px solid #F1F5F9', borderRadius: '20px', transition: 'all 0.2s ease', boxShadow: 'none' }}>
-                            <div style={{ fontSize: '28px', color: '#EF4444', marginBottom: '12px', position: 'relative' }}>
-                                📹
-                                <div style={{ position: 'absolute', top: '-2px', right: '25%', width: '8px', height: '8px', background: '#EF4444', borderRadius: '50%', border: '2px solid white' }}></div>
-                            </div>
-                            <div style={{ fontWeight: 800, fontSize: '14px', color: '#1E293B' }}>Video</div>
-                            <input type="file" accept="video/*" capture="environment" onChange={(e) => handleFileUpload(e, 'live')} style={{ display: 'none' }} />
-                        </label>
+                    {/* Direct Camera Row */}
+                    <div style={{ padding: '20px 20px 12px', borderBottom: '1px dashed var(--border-color)' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>📷 Capture Live</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            {/* Photo Camera */}
+                            <label style={{
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                gap: '10px', padding: '24px 12px', minHeight: '110px',
+                                background: 'var(--primary-light)', border: '1.5px solid rgba(37,99,235,0.2)',
+                                borderRadius: '18px', cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,99,235,0.12)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'var(--primary-light)'}
+                            >
+                                <span style={{ fontSize: '36px' }}>📷</span>
+                                <span style={{ fontWeight: 800, fontSize: '13px', color: 'var(--primary)' }}>Photo</span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Opens camera</span>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    onChange={(e) => handleFileUpload(e, 'live')}
+                                    style={{ display: 'none' }}
+                                />
+                            </label>
+
+                            {/* Video Camera */}
+                            <label style={{
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                gap: '10px', padding: '24px 12px', minHeight: '110px',
+                                background: 'rgba(239,68,68,0.05)', border: '1.5px solid rgba(239,68,68,0.2)',
+                                borderRadius: '18px', cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.05)'}
+                            >
+                                <span style={{ fontSize: '36px' }}>🎥</span>
+                                <span style={{ fontWeight: 800, fontSize: '13px', color: '#EF4444' }}>Video</span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Record live</span>
+                                <input
+                                    type="file"
+                                    accept="video/*"
+                                    capture="environment"
+                                    onChange={(e) => handleFileUpload(e, 'live')}
+                                    style={{ display: 'none' }}
+                                />
+                            </label>
+                        </div>
                     </div>
 
-                    <label className="btn btn-primary" style={{ width: '100%', padding: '18px', borderRadius: '16px', gap: '12px', fontSize: '15px', fontWeight: 700 }}>
-                        <span>📤</span>
-                        <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontSize: '15px' }}>Upload from Gallery</div>
-                            <div style={{ fontSize: '11px', opacity: 0.8, fontWeight: 500 }}>Select existing photo/video</div>
+                    {/* Gallery Upload */}
+                    <label style={{
+                        display: 'flex', alignItems: 'center', gap: '16px',
+                        padding: '18px 20px', cursor: 'pointer',
+                        transition: 'background 0.2s ease'
+                    }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-main)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                        <div style={{
+                            width: '48px', height: '48px', borderRadius: '14px',
+                            background: 'var(--bg-main)', border: '1px solid var(--border-color)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '22px', flexShrink: 0
+                        }}>🖼️</div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--text-primary)' }}>Upload from Gallery</div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, marginTop: '2px' }}>Select existing photos or videos from device</div>
                         </div>
-                        <input type="file" accept="image/*,video/*" multiple onChange={(e) => handleFileUpload(e, 'upload')} style={{ display: 'none' }} />
+                        <div style={{ fontSize: '18px', color: 'var(--text-muted)' }}>›</div>
+                        <input
+                            type="file"
+                            accept="image/*,video/*"
+                            multiple
+                            onChange={(e) => handleFileUpload(e, 'upload')}
+                            style={{ display: 'none' }}
+                        />
                     </label>
                 </div>
 
@@ -211,19 +279,50 @@ export default function ReportViolation() {
                     </p>
                 </div>
 
-                <div className="card" style={{ marginBottom: 'var(--space-32)', padding: 'var(--space-24)', borderRadius: '24px' }}>
-                    <div className="form-group" style={{ marginBottom: 'var(--space-24)' }}>
-                        <label className="form-label" style={{ fontWeight: 800, fontSize: '12px', color: 'var(--primary)', letterSpacing: '0.05em' }}>VIOLATION CATEGORY</label>
-                        <select className="form-input" value={crimeType} onChange={(e) => setCrimeType(e.target.value)} style={{ fontSize: '16px', fontWeight: 600, border: '1px solid #E2E8F0', padding: '14px' }}>
-                            <option value="">Select violation type...</option>
-                            {CRIME_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
+                {/* ── Violation Type Grid ── */}
+                <div style={{ marginBottom: 'var(--space-24)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '14px' }}>Select Violation Type</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '6px' }}>
+                        {CRIME_TYPES.map(c => {
+                            const isSelected = crimeType === c;
+                            return (
+                                <button
+                                    key={c}
+                                    type="button"
+                                    onClick={() => setCrimeType(c)}
+                                    style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                        gap: '6px', padding: '14px 8px',
+                                        background: isSelected ? 'var(--primary)' : 'white',
+                                        border: `1.5px solid ${isSelected ? 'var(--primary)' : 'var(--border-color)'}`,
+                                        borderRadius: '14px', cursor: 'pointer',
+                                        transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
+                                        boxShadow: isSelected ? '0 4px 14px rgba(37,99,235,0.3)' : 'none',
+                                        transform: isSelected ? 'scale(1.03)' : 'scale(1)',
+                                    }}
+                                >
+                                    <span style={{ fontSize: '24px', lineHeight: 1 }}>{CRIME_ICONS[c] || '📋'}</span>
+                                    <span style={{
+                                        fontSize: '10px', fontWeight: 800, textAlign: 'center',
+                                        color: isSelected ? 'white' : 'var(--text-secondary)',
+                                        textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.3
+                                    }}>{c}</span>
+                                </button>
+                            );
+                        })}
                     </div>
+                </div>
 
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label" style={{ fontWeight: 800, fontSize: '12px', color: 'var(--primary)', letterSpacing: '0.05em' }}>OFFICER REMARKS (OPTIONAL)</label>
-                        <textarea className="form-input" style={{ minHeight: '120px', resize: 'none', fontSize: '15px', border: '1px solid #E2E8F0', padding: '14px' }} placeholder="Provide specific context or observations..." value={comments} onChange={e => setComments(e.target.value)} />
-                    </div>
+                {/* ── Comments Textarea ── */}
+                <div style={{ background: 'white', borderRadius: '16px', padding: '18px', border: '1px solid var(--border-color)', marginBottom: 'var(--space-32)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>Additional Remarks (Optional)</div>
+                    <textarea
+                        className="form-input"
+                        style={{ minHeight: '100px', resize: 'none', fontSize: '14px', border: '1px solid var(--border-color)', padding: '12px', borderRadius: '10px', width: '100%', boxSizing: 'border-box' }}
+                        placeholder="Describe what you observed..."
+                        value={comments}
+                        onChange={e => setComments(e.target.value)}
+                    />
                 </div>
 
                 <div style={{ display: 'flex', gap: '16px', marginTop: 'var(--space-32)', paddingBottom: 'var(--space-96)' }}>
@@ -290,8 +389,8 @@ export default function ReportViolation() {
         <div className="animate-up" style={{ minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div className="card text-center" style={{ maxWidth: '440px', padding: 'var(--space-40)', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
                 <div style={{ width: '80px', height: '80px', background: 'var(--success-light)', color: 'var(--success)', fontSize: '40px', margin: '0 auto var(--space-24)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
-                <h2 style={{ marginBottom: 'var(--space-16)', fontSize: '28px', fontWeight: 800 }}>Incident Logged</h2>
-                <p className="text-body" style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-32)', fontSize: '15px' }}>
+                <h2 style={{ marginBottom: 'var(--space-16)', fontSize: '28px', fontWeight: 800, textAlign: 'center' }}>Incident Logged</h2>
+                <p className="text-body" style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-32)', fontSize: '15px', textAlign: 'center' }}>
                     Case Ref: <strong style={{ color: 'var(--text-primary)' }}>#{submittedId.slice(0, 8)}</strong> has been successfully archived with encrypted GPS coordinates and timestamps.
                 </p>
 

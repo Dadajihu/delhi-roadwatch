@@ -18,13 +18,29 @@ import NotificationsPanel from './components/NotificationsPanel';
 
 import './index.css';
 
-// ── Protected Route ──
+// ── Protected Route — only for logged-in users ──
 function ProtectedRoute({ children, allowedRoles }) {
   const { currentUser, ready } = useAuth();
 
-  if (!ready) return <div style={{ padding: '80px', textAlign: 'center', color: '#94A3B8' }}>Loading...</div>;
+  if (!ready) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: '14px', fontWeight: 700 }}>Loading...</div>;
   if (!currentUser) return <Navigate to="/" replace />;
-  if (allowedRoles && !allowedRoles.includes(currentUser.role)) return <Navigate to="/" replace />;
+  if (allowedRoles && !allowedRoles.includes(currentUser.role)) {
+    const dest = currentUser.role === 'citizen' ? '/citizen' : currentUser.role === 'admin' ? '/admin' : '/police';
+    return <Navigate to={dest} replace />;
+  }
+
+  return children;
+}
+
+// ── Guest Route — only for logged-out users ──
+function GuestRoute({ children }) {
+  const { currentUser, ready } = useAuth();
+
+  if (!ready) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: '14px', fontWeight: 700 }}>Loading...</div>;
+  if (currentUser) {
+    const dest = currentUser.role === 'citizen' ? '/citizen' : currentUser.role === 'admin' ? '/admin' : '/police';
+    return <Navigate to={dest} replace />;
+  }
 
   return children;
 }
@@ -184,8 +200,8 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/" element={<GuestRoute><LoginPage /></GuestRoute>} />
+          <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
           <Route path="/*" element={<DashboardLayout />} />
         </Routes>
       </AuthProvider>

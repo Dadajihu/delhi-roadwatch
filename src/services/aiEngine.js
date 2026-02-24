@@ -3,16 +3,15 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const ROBOFLOW_API_KEY = "EfoLlmKeF5BZCKvwshub";
 const WORKFLOW_ENDPOINT = "https://serverless.roboflow.com/madhus/workflows/text-recognition";
-const GEMINI_API_KEY = "AIzaSyDQoTRBPihhoyvNT3KrojvirAoiMnwpSk8";
-const SIGHTENGINE_API_USER = "931483566";
-const SIGHTENGINE_API_SECRET = "f75XhnAHSJpq4TxUWyFtT4xy7hJvoAXg";
+const GEMINI_API_KEY = "AIzaSyBps6OFbZWZz8f8-rglibg1TD9dF6FZ0Wk";
+const SIGHTENGINE_API_USER = "1963502358";
+const SIGHTENGINE_API_SECRET = "3qvaFMYuR2ovrRfjKkfjQZEmZGUs4mdv";
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// Use Gemini 2.5 Pro for deep analysis and justification
+// Use gemini-2.5-pro as it's active on this key and parses data correctly for analysis
 const proModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-// Keep Flash as fallback
-const flashModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 /**
  * Converts a browser File object to a Base64 string
@@ -118,12 +117,17 @@ CRITICAL: Return ONLY a valid JSON object with NO extra text before or after it.
 
         console.log("[AI ENGINE] Gemini Raw Response:", text);
 
-        // Sanitize response text to find JSON
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        // Robustly parse JSON out of markdown block if necessary
+        let jsonRaw = text.trim();
+        if (jsonRaw.startsWith('```json')) jsonRaw = jsonRaw.replace('```json', '');
+        if (jsonRaw.startsWith('```')) jsonRaw = jsonRaw.replace('```', '');
+        if (jsonRaw.endsWith('```')) jsonRaw = jsonRaw.replace(/```$/, '');
+
+        const jsonMatch = jsonRaw.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0]);
         }
-        return null;
+        return JSON.parse(jsonRaw); // emergency fallback
     } catch (err) {
         console.error("[AI ENGINE] Gemini Analysis Error:", err);
         return null;
@@ -147,50 +151,19 @@ export async function processReport(report, imageFile) {
             base64Image = await fileToBase64(imageFile);
 
             // ──────────────────────────────────────
-            // STEP 1: Roboflow OCR (Number Plate)
+            // STEP 1: Skip Roboflow, use Gemini directly
             // ──────────────────────────────────────
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-            try {
-                const response = await fetch(WORKFLOW_ENDPOINT, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        api_key: ROBOFLOW_API_KEY,
-                        image: base64Image
-                    }),
-                    signal: controller.signal
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log("[AI ENGINE] Roboflow Raw Data:", data);
-
-                    if (data?.outputs?.[0]) {
-                        const output = data.outputs[0];
-                        const ocrResults = output.ocr_results || output.predictions || [];
-                        if (ocrResults.length > 0) {
-                            detectedPlate = ocrResults[0].text || ocrResults[0].class || 'PENDING';
-                            roboflowConfidence = Math.floor((ocrResults[0].confidence || 0) * 100);
-                        }
-                    }
-                }
-            } catch (err) {
-                console.warn("[AI ENGINE] Roboflow skipped/failed:", err.message);
-            } finally {
-                clearTimeout(timeoutId);
-            }
+            console.log("[AI ENGINE] Roboflow skipped. Relying entirely on Gemini for OCR.");
 
             // ──────────────────────────────────────
             // STEP 2: Gemini 2.5 Pro Analysis
-            // (Violation score + AI comments + plate fallback)
+            // (Violation score + AI comments + Number Plate)
             // ──────────────────────────────────────
-            console.log("[AI ENGINE] Starting Gemini 2.5 Pro analysis...");
+            console.log("[AI ENGINE] Starting Gemini 2.5 Pro analysis (including plate detection)...");
             const geminiResult = await getGeminiProAnalysis(
                 base64Image,
                 report,
-                (detectedPlate === 'PENDING' || detectedPlate === 'NONE')
+                true // ALWAYS request the number plate since Roboflow is removed
             );
 
             // ──────────────────────────────────────

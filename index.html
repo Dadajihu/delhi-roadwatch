@@ -1,14 +1,38 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Delhi RoadWatch — Traffic Violation Reporting System. Report violations, AI processing, admin review, police confirmation." />
-    <title>Delhi RoadWatch</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+
+  <!-- Viewport: prevent user-scalable zoom which can break inputs on iOS -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+  <!-- Mobile web app capable — makes it feel native when added to homescreen -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="RoadWatch" />
+
+  <!-- Theme colour for browser chrome on Android -->
+  <meta name="theme-color" content="#2563EB" />
+
+  <!-- SEO -->
+  <meta name="description"
+    content="Delhi RoadWatch — AI-powered traffic violation reporting. Report violations, upload evidence, AI processing, admin review." />
+  <meta name="keywords" content="Delhi traffic, road violation, traffic police, report violation, RoadWatch" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Delhi RoadWatch" />
+  <meta property="og:description" content="AI-powered traffic violation reporting system for Delhi." />
+  <meta property="og:type" content="website" />
+
+  <title>Delhi RoadWatch</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>

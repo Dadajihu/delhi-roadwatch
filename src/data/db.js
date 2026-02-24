@@ -121,6 +121,15 @@ export async function updateReportStatus(reportId, newStatus) {
   if (error) throw error;
 }
 
+export async function deleteReport(reportId) {
+  // Delete dependent rows first (FK constraints)
+  await supabase.from('ai_analysis').delete().eq('report_id', reportId);
+  await supabase.from('case_status').delete().eq('report_id', reportId);
+  await supabase.from('notifications').delete().eq('report_id', reportId);
+  const { error } = await supabase.from('reports').delete().eq('report_id', reportId);
+  if (error) throw error;
+}
+
 // ═══════════════════════════════════════
 //  AI ANALYSIS QUERIES
 // ═══════════════════════════════════════
