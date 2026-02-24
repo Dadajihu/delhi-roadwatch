@@ -287,9 +287,41 @@ export default function AdminDashboard() {
                                                             </div>
                                                         </div>
 
-                                                        <div style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: 500, lineHeight: 1.5, marginBottom: '16px' }}>
-                                                            {ai.ai_summary}
-                                                        </div>
+                                                        {/* AI Verdict Badge */}
+                                                        {(() => {
+                                                            const summary = ai.ai_summary || '';
+                                                            const verdictMatch = summary.match(/^\[([A-Z_]+)\]\s*/);
+                                                            const verdict = verdictMatch ? verdictMatch[1] : null;
+                                                            const comments = verdictMatch ? summary.replace(verdictMatch[0], '') : summary;
+                                                            const verdictColors = {
+                                                                'CONFIRMED_VIOLATION': { bg: 'var(--danger)', text: 'white' },
+                                                                'PROBABLE_VIOLATION': { bg: 'var(--warning)', text: 'white' },
+                                                                'INSUFFICIENT_EVIDENCE': { bg: '#94A3B8', text: 'white' },
+                                                                'NO_VIOLATION_DETECTED': { bg: 'var(--success)', text: 'white' },
+                                                                'ANALYSIS_COMPLETE': { bg: 'var(--info)', text: 'white' }
+                                                            };
+                                                            const vc = verdictColors[verdict] || { bg: 'var(--info)', text: 'white' };
+                                                            return (
+                                                                <div style={{ marginBottom: '16px' }}>
+                                                                    {verdict && (
+                                                                        <div style={{
+                                                                            display: 'inline-block', fontSize: '10px', fontWeight: 900,
+                                                                            padding: '5px 12px', borderRadius: '8px', marginBottom: '12px',
+                                                                            background: vc.bg, color: vc.text, letterSpacing: '0.05em'
+                                                                        }}>
+                                                                            {verdict.replace(/_/g, ' ')}
+                                                                        </div>
+                                                                    )}
+                                                                    <div style={{
+                                                                        fontSize: '13px', color: 'var(--text-primary)', fontWeight: 500,
+                                                                        lineHeight: 1.7, background: 'white', padding: '16px',
+                                                                        borderRadius: '12px', borderLeft: `3px solid ${vc.bg}`
+                                                                    }}>
+                                                                        {comments}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
 
                                                         {/* Vahaan Info Section */}
                                                         <div style={{ borderTop: '1px dashed rgba(37, 99, 235, 0.2)', paddingTop: '16px' }}>

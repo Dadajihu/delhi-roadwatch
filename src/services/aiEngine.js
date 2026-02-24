@@ -8,7 +8,11 @@ const SIGHTENGINE_API_USER = "931483566";
 const SIGHTENGINE_API_SECRET = "f75XhnAHSJpq4TxUWyFtT4xy7hJvoAXg";
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-3-flash" });
+
+// Use Gemini 2.5 Pro for deep analysis and justification
+const proModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+// Keep Flash as fallback
+const flashModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 /**
  * Converts a browser File object to a Base64 string
@@ -25,6 +29,7 @@ async function fileToBase64(file) {
 
 /**
  * Checks if an image is AI generated using Sightengine
+ * (Your friend is working on this — keeping it as is)
  */
 async function checkAiGenerated(imageFile) {
     try {
@@ -42,7 +47,6 @@ async function checkAiGenerated(imageFile) {
         if (response.ok) {
             const data = await response.json();
             console.log("Sightengine Result:", data);
-            // Result is a probability from 0 to 1
             if (data && data.type && data.type.ai_generated !== undefined) {
                 return Math.floor(data.type.ai_generated * 100);
             }
@@ -55,27 +59,41 @@ async function checkAiGenerated(imageFile) {
 }
 
 /**
- * Calls Gemini for comprehensive analysis (Summary, Score, and optional Plate Fallback)
+ * Calls Gemini 2.5 Pro for comprehensive violation analysis with detailed justification
  */
-async function getGeminiAnalysis(imageInput, report, needPlate = false) {
+async function getGeminiProAnalysis(imageInput, report, needPlate = false) {
     try {
-        const prompt = `Analyze this traffic violation image.
-Violation Type: ${report.crime_type}
-Location: ${report.comments}
+        const prompt = `You are a senior traffic violation analyst for Delhi Traffic Police. Analyze this traffic violation image with extreme precision and professionalism.
 
-TASKS:
-1. VALIDITY: Determine if this is a clear traffic violation based on the visual evidence.
-2. SUMMARY: Provide professional AI comments describing the vehicle behavior and why it constitutes a violation (max 35 words).
-3. SCORE: Assign a severity/certainty score (0-100).
-${needPlate ? '4. PLATE: Identify the vehicle number plate. Format: "DL XX XX XXXX". If unreadable, return "NONE".' : ''}
+REPORTED VIOLATION TYPE: ${report.crime_type}
+CITIZEN REMARKS: ${report.comments || 'None provided'}
 
-CRITICAL: Return ONLY a valid JSON object.
-Structure:
+YOUR TASKS:
+1. **VIOLATION ASSESSMENT**: Carefully examine the image for evidence of "${report.crime_type}". Determine if a genuine traffic violation is visible.
+
+2. **CONFIDENCE SCORE (0-100)**: Assign a score representing how confident you are that a real traffic violation is present.
+   - 90-100: Clear, undeniable violation with strong visual evidence
+   - 70-89: Likely violation but some elements are partially obscured
+   - 50-69: Possible violation but image quality or angle makes it uncertain
+   - 20-49: Weak evidence, violation is not clearly visible
+   - 0-19: No violation detected or image is irrelevant
+
+3. **AI COMMENTS**: Write a detailed professional analysis (60-100 words) covering:
+   - What is visible in the image (vehicle type, color, road conditions, surroundings)
+   - Specific evidence supporting or contradicting the reported violation
+   - Why you assigned the confidence score you did
+   - Any aggravating factors (school zone, heavy traffic, pedestrians at risk)
+   - A final verdict sentence
+
+${needPlate ? `4. **NUMBER PLATE**: Identify the vehicle registration number plate visible in the image. Use Indian format like "DL XX XX XXXX". If the plate is unreadable or not visible, return "NONE".` : ''}
+
+CRITICAL: Return ONLY a valid JSON object with NO extra text before or after it.
 {
   "is_valid": true/false,
-  "summary": "...",
-  "score": 0,
-  ${needPlate ? '"plate": "..."' : ''}
+  "confidence_score": <number 0-100>,
+  "ai_comments": "<detailed professional analysis string>",
+  "verdict": "<one of: CONFIRMED_VIOLATION | PROBABLE_VIOLATION | INSUFFICIENT_EVIDENCE | NO_VIOLATION_DETECTED>"
+  ${needPlate ? ',"plate": "<plate number or NONE>"' : ''}
 }`;
 
         const part = {
@@ -85,11 +103,20 @@ Structure:
             }
         };
 
-        const result = await model.generateContent([prompt, part]);
+        // Try Pro first, fallback to Flash
+        let result;
+        try {
+            console.log("[AI ENGINE] Calling Gemini 2.5 Pro...");
+            result = await proModel.generateContent([prompt, part]);
+        } catch (proErr) {
+            console.warn("[AI ENGINE] Pro model failed, falling back to Flash:", proErr.message);
+            result = await flashModel.generateContent([prompt, part]);
+        }
+
         const response = await result.response;
         const text = response.text();
 
-        console.log("Gemini Raw Response:", text);
+        console.log("[AI ENGINE] Gemini Raw Response:", text);
 
         // Sanitize response text to find JSON
         const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -98,13 +125,17 @@ Structure:
         }
         return null;
     } catch (err) {
-        console.error("Gemini Analysis Error:", err);
+        console.error("[AI ENGINE] Gemini Analysis Error:", err);
         return null;
     }
 }
 
 /**
- * Processes a report using Roboflow for Primary OCR and Gemini for Logic/Fallback
+ * Processes a report using:
+ *   1. Roboflow for Primary OCR (number plate)
+ *   2. Gemini 2.5 Pro for violation analysis + AI comments + score justification
+ *   3. Sightengine for deepfake detection (your friend's part)
+ *   4. Vahaan DB for vehicle registry lookup
  */
 export async function processReport(report, imageFile) {
     let detectedPlate = 'PENDING';
@@ -115,7 +146,9 @@ export async function processReport(report, imageFile) {
         if (imageFile) {
             base64Image = await fileToBase64(imageFile);
 
-            // 1. Roboflow Attempt
+            // ──────────────────────────────────────
+            // STEP 1: Roboflow OCR (Number Plate)
+            // ──────────────────────────────────────
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -132,7 +165,7 @@ export async function processReport(report, imageFile) {
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log("Roboflow Raw Data:", data);
+                    console.log("[AI ENGINE] Roboflow Raw Data:", data);
 
                     if (data?.outputs?.[0]) {
                         const output = data.outputs[0];
@@ -144,23 +177,45 @@ export async function processReport(report, imageFile) {
                     }
                 }
             } catch (err) {
-                console.warn("Roboflow skipped/failed:", err.message);
+                console.warn("[AI ENGINE] Roboflow skipped/failed:", err.message);
             } finally {
                 clearTimeout(timeoutId);
             }
 
-            // 2. Gemini Analysis (Always for Summary/Score, Fallback for Plate)
-            const geminiResult = await getGeminiAnalysis(base64Image, report, (detectedPlate === 'PENDING' || detectedPlate === 'NONE'));
+            // ──────────────────────────────────────
+            // STEP 2: Gemini 2.5 Pro Analysis
+            // (Violation score + AI comments + plate fallback)
+            // ──────────────────────────────────────
+            console.log("[AI ENGINE] Starting Gemini 2.5 Pro analysis...");
+            const geminiResult = await getGeminiProAnalysis(
+                base64Image,
+                report,
+                (detectedPlate === 'PENDING' || detectedPlate === 'NONE')
+            );
 
-            // 3. Sightengine Check (AI Generation Detection)
+            // ──────────────────────────────────────
+            // STEP 3: Sightengine Deepfake Check
+            // (Your friend is working on enhancing this)
+            // ──────────────────────────────────────
+            console.log("[AI ENGINE] Running Sightengine deepfake check...");
             const aiGeneratedScore = await checkAiGenerated(imageFile);
 
+            // ──────────────────────────────────────
+            // STEP 4: Compile Results
+            // ──────────────────────────────────────
             let ai_summary = 'Automated analysis pending manual verification.';
             let finalConfidence = roboflowConfidence || 65;
 
             if (geminiResult) {
-                ai_summary = geminiResult.summary || ai_summary;
-                finalConfidence = geminiResult.score || finalConfidence;
+                // Build the comprehensive AI summary combining the analysis + verdict
+                const verdict = geminiResult.verdict || 'ANALYSIS_COMPLETE';
+                const comments = geminiResult.ai_comments || geminiResult.summary || ai_summary;
+
+                // Create the final AI summary with the verdict tag
+                ai_summary = `[${verdict}] ${comments}`;
+
+                // Use Gemini's confidence score (it's specifically tuned to this violation)
+                finalConfidence = geminiResult.confidence_score || geminiResult.score || finalConfidence;
 
                 // Use Gemini plate if Roboflow failed
                 if (detectedPlate === 'PENDING' || detectedPlate === 'NONE') {
@@ -174,7 +229,9 @@ export async function processReport(report, imageFile) {
                 ? detectedPlate.trim().toUpperCase().replace(/\s/g, '')
                 : 'REVIEW REQUIRED';
 
-            // 4. Vahaan Check
+            // ──────────────────────────────────────
+            // STEP 5: Vahaan Vehicle Registry Lookup
+            // ──────────────────────────────────────
             let vahaan_info = "not there in wahan";
             if (finalPlate !== 'REVIEW REQUIRED') {
                 const vehicle = await lookupVehicle(finalPlate);
@@ -183,18 +240,19 @@ export async function processReport(report, imageFile) {
                 }
             }
 
+            // ──────────────────────────────────────
+            // STEP 6: Save to Database
+            // ──────────────────────────────────────
             const analysisRecord = {
                 report_id: report.report_id,
                 ai_summary: ai_summary,
                 confidence_score: finalConfidence,
                 detected_vehicle_number: finalPlate,
                 ai_generated_score: aiGeneratedScore,
-                // We'll store vahaan info in the summary or a new field if we updated schema
-                // For now, let's append it to summary or store it as is if schema allows
                 vahaan_status: vahaan_info
             };
 
-            console.log("AI Engine Processing Complete:", analysisRecord);
+            console.log("[AI ENGINE] ✅ Processing Complete:", analysisRecord);
 
             await saveAiAnalysis(analysisRecord);
             await updateReportStatus(report.report_id, STATUS.AI_PROCESSED);
@@ -202,8 +260,7 @@ export async function processReport(report, imageFile) {
             return analysisRecord;
         }
     } catch (error) {
-        console.error("AI Engine overall failure:", error);
+        console.error("[AI ENGINE] Overall failure:", error);
     }
     return null;
 }
-

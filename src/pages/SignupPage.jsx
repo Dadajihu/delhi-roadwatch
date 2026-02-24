@@ -15,7 +15,8 @@ export default function SignupPage() {
     const [confirm, setConfirm] = useState('');
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
-    const { signup, loading } = useAuth();
+    const [submitting, setSubmitting] = useState(false);
+    const { signup } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
@@ -25,6 +26,7 @@ export default function SignupPage() {
         if (password !== confirm) { setError('Passwords do not match.'); return; }
         if (aadhaar.length !== 12) { setError('Aadhaar must be 12 digits.'); return; }
 
+        setSubmitting(true);
         const result = await signup(name, email, phone, aadhaar, password);
         if (result.success) {
             if (result.needEmailConfirm) {
@@ -36,6 +38,7 @@ export default function SignupPage() {
         } else {
             setError(result.error);
         }
+        setSubmitting(false);
     };
 
     return (
@@ -110,8 +113,8 @@ export default function SignupPage() {
                     </div>
 
                     <div style={{ marginTop: 'var(--space-24)' }}>
-                        <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', padding: '16px', fontSize: '15px', fontWeight: 700 }}>
-                            {loading ? 'Securing Identity...' : 'Join RoadWatch Ecosystem'}
+                        <button type="submit" className="btn btn-primary" disabled={submitting} style={{ width: '100%', padding: '16px', fontSize: '15px', fontWeight: 700 }}>
+                            {submitting ? 'Securing Identity...' : 'Join RoadWatch Ecosystem'}
                         </button>
                     </div>
                 </form>

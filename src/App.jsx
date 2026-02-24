@@ -20,9 +20,9 @@ import './index.css';
 
 // ── Protected Route ──
 function ProtectedRoute({ children, allowedRoles }) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, ready } = useAuth();
 
-  if (loading) return <div style={{ padding: '80px', textAlign: 'center' }}>Validating session...</div>;
+  if (!ready) return <div style={{ padding: '80px', textAlign: 'center', color: '#94A3B8' }}>Loading...</div>;
   if (!currentUser) return <Navigate to="/" replace />;
   if (allowedRoles && !allowedRoles.includes(currentUser.role)) return <Navigate to="/" replace />;
 
@@ -31,7 +31,7 @@ function ProtectedRoute({ children, allowedRoles }) {
 
 // ── Shared Dashboard Shell ──
 function DashboardLayout() {
-  const { currentUser, logout, loading } = useAuth();
+  const { currentUser, logout, ready } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -42,7 +42,7 @@ function DashboardLayout() {
   // Close sidebar on navigation (mobile)
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
-  if (loading) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Initializing Portal...</div>;
+  if (!ready) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8' }}>Loading...</div>;
   if (!currentUser) return <Navigate to="/" replace />;
 
   const citizenLinks = [

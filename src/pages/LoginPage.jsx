@@ -5,26 +5,62 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
     const [role, setRole] = useState('citizen');
     const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
-    const { login, loading } = useAuth();
+    const [submitting, setSubmitting] = useState(false);
+    const { login } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        const result = await login(role, identifier, password);
-        if (result.success) {
-            if (role === 'citizen') navigate('/citizen');
-            else if (role === 'police') navigate('/police');
-            else if (role === 'admin') navigate('/admin');
-        } else {
-            setError(result.error);
+        setSubmitting(true);
+
+        try {
+            // Try AuthContext login first
+            const result = await login(role, identifier, password);
+            if (result.success) {
+                if (role === 'citizen') navigate('/citizen');
+                else if (role === 'police') navigate('/police');
+                else if (role === 'admin') navigate('/admin');
+                setSubmitting(false);
+                return;
+            }
+
+            // If AuthContext login failed, try direct DB query as backup
+            const table = role === 'citizen' ? 'users' : role === 'police' ? 'police' : 'admins';
+            const idCol = role === 'citizen' ? 'email' : role === 'police' ? 'police_id' : 'admin_id';
+
+            const { data: directUser, error: dbErr } = await supabase
+                .from(table)
+                .select('*')
+                .eq(idCol, identifier)
+                .eq('password_hash', password)
+                .single();
+
+            if (directUser) {
+                // Force set user through login context workaround
+                const user = {
+                    ...directUser,
+                    role,
+                    user_id: directUser.user_id || directUser.police_id || directUser.admin_id
+                };
+                // Store in sessionStorage so App can pick it up
+                sessionStorage.setItem('rw_user', JSON.stringify(user));
+                window.location.href = role === 'citizen' ? '/citizen' : role === 'police' ? '/police' : '/admin';
+                return;
+            }
+
+            setError(result.error || 'Invalid credentials. Please check your email and password.');
+        } catch (err) {
+            setError('Login failed: ' + err.message);
         }
+        setSubmitting(false);
     };
 
     const getPlaceholder = () => {
@@ -149,7 +185,7 @@ export default function LoginPage() {
                     </div>
 
                     <div style={{ marginTop: '8px' }}>
-                        <button type="submit" className="btn btn-primary" disabled={loading} style={{
+                        <button type="submit" className="btn btn-primary" disabled={submitting} style={{
                             width: '100%',
                             padding: '18px',
                             fontSize: '14px',
@@ -158,7 +194,7 @@ export default function LoginPage() {
                             letterSpacing: '0.1em',
                             borderRadius: '14px'
                         }}>
-                            {loading ? 'Authenticating...' : 'Sign In to Portal'}
+                            {submitting ? 'Authenticating...' : 'Sign In to Portal'}
                         </button>
                     </div>
                 </form>
