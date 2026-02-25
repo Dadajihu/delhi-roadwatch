@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 
@@ -29,22 +30,30 @@ serve(async (req) => {
         }
 
         // Environment Variables (Load these in Supabase Dashboard -> Edge Functions -> Secrets)
-        const ROBOFLOW_API_KEY = Deno.env.get("ROBOFLOW_API_KEY") || "EfoLlmKeF5BZCKvwshub";
-        const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "AIzaSyBps6OFbZWZz8f8-rglibg1TD9dF6FZ0Wk";
-        const SIGHTENGINE_API_USER = Deno.env.get("SIGHTENGINE_API_USER") || "1963502358";
-        const SIGHTENGINE_API_SECRET = Deno.env.get("SIGHTENGINE_API_SECRET") || "3qvaFMYuR2ovrRfjKkfjQZEmZGUs4mdv";
+        const ROBOFLOW_API_KEY = Deno.env.get("ROBOFLOW_API_KEY");
+        const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+        const SIGHTENGINE_API_USER = Deno.env.get("SIGHTENGINE_API_USER");
+        const SIGHTENGINE_API_SECRET = Deno.env.get("SIGHTENGINE_API_SECRET");
 
-        // IMPORTANT: We need the Service Role key to bypass RLS when writing AI results
+        // IMPORTANT: We will use the Anon Key since policies are open for demo
         const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const imageUrl = report.media_urls[0];
 
         // Fetch Image Bytes for Gemini
         const imageRes = await fetch(imageUrl);
         const arrayBuffer = await imageRes.arrayBuffer();
-        const base64Bytes = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+        // Safer Base64 encoding for large image files (prevents call stack size exceeded)
+        let binary = '';
+        const bytes = new Uint8Array(arrayBuffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64Bytes = btoa(binary);
 
         let detectedPlate = 'PENDING';
         let roboflowConfidence = 0;
@@ -98,7 +107,7 @@ serve(async (req) => {
         }
 
         // ============================================
-        // STEP 3: GEMINI 2.5 PRO (Violation Analysis)
+        // STEP 3: GEMINI 2.0 FLASH (Violation Analysis)
         // ============================================
         try {
             console.log("[GEMINI] Running violation analysis...");
@@ -114,7 +123,7 @@ CRITICAL: Return ONLY a valid JSON object with NO extra text before or after it.
 }`;
 
             // Calls Gemini directly via RAW REST API to avoid NodeJS SDK limitations
-            const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}`, {
+            const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -136,7 +145,7 @@ CRITICAL: Return ONLY a valid JSON object with NO extra text before or after it.
             let jsonString = textRaw.replace(/```json/g, '').replace(/```/g, '').trim();
             const geminiParsed = JSON.parse(jsonString);
 
-            finalConfidence = geminiParsed.confidence_score || roboflowConfidence || 65;
+            finalConfidence = geminiParsed.confidence_score !== undefined ? geminiParsed.confidence_score : (roboflowConfidence || 65);
             const verdict = geminiParsed.verdict || 'ANALYSIS_COMPLETE';
             ai_summary = `[${verdict}] ${geminiParsed.ai_comments || 'Analysis processed.'}`;
 

@@ -30,17 +30,17 @@ export default function MyReports() {
 
     return (
         <div className="animate-up">
-            <header style={{ marginBottom: 'var(--space-40)' }}>
+            <header style={{ marginBottom: 'var(--space-40)', textAlign: 'center' }}>
                 <h1 style={{ marginBottom: 'var(--space-16)' }}>Case History</h1>
                 <p className="text-body" style={{ color: 'var(--text-secondary)' }}>Track the real-time status and AI verification of your submitted reports.</p>
             </header>
 
             {reports.length === 0 ? (
-                <div className="card text-center" style={{ padding: 'var(--space-96)' }}>
+                <div className="card text-center" style={{ padding: 'var(--space-96)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                     <div className="icon-container" style={{ width: '64px', height: '64px', background: 'var(--bg-main)', margin: '0 auto var(--space-24)', fontSize: '24px' }}>📭</div>
                     <h2 style={{ marginBottom: 'var(--space-16)' }}>No reports found</h2>
-                    <p className="text-meta" style={{ marginBottom: 'var(--space-24)' }}>Help maintain road discipline by reporting your first violation.</p>
-                    <button className="btn btn-primary" onClick={() => navigate('/citizen/report')}>
+                    <p className="text-meta" style={{ marginBottom: 'var(--space-24)', textAlign: 'center' }}>Help maintain road discipline by reporting your first violation.</p>
+                    <button className="btn btn-primary" onClick={() => navigate(currentUser?.role === 'police' ? '/police/report' : '/citizen/report')}>
                         File New Report
                     </button>
                 </div>
@@ -66,8 +66,8 @@ export default function MyReports() {
                                         </div>
                                     </div>
                                     <span className={`badge ${report.status.includes('Accepted') || report.status.includes('Confirmed') ? 'badge-success' :
-                                            report.status.includes('Rejected') ? 'badge-danger' :
-                                                'badge-info'
+                                        report.status.includes('Rejected') ? 'badge-danger' :
+                                            'badge-info'
                                         }`}>
                                         {report.status}
                                     </span>
@@ -77,12 +77,22 @@ export default function MyReports() {
                                     <div>
                                         <div className="text-meta" style={{ fontWeight: 700, marginBottom: '4px' }}>CASE REFERENCE</div>
                                         <div style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)', fontSize: '13px' }}>{report.report_id}</div>
-                                        {report.comments && (
-                                            <div style={{ marginTop: 'var(--space-16)' }}>
-                                                <div className="text-meta" style={{ fontWeight: 700, marginBottom: '4px' }}>CITIZEN REMARKS</div>
-                                                <div style={{ fontSize: '14px', fontStyle: 'italic', color: 'var(--text-secondary)' }}>"{report.comments}"</div>
-                                            </div>
-                                        )}
+                                        {(() => {
+                                            if (!report.comments) return null;
+                                            // Strip out [Location: ...] and [Photo Taken: ...] from citizen view
+                                            let cleanText = report.comments;
+                                            cleanText = cleanText.replace(/\[Location:\s*([-\d.]+),\s*([-\d.]+)\]/, '');
+                                            cleanText = cleanText.replace(/\[Photo Taken:\s*([^\]]+)\]/, '');
+                                            cleanText = cleanText.trim();
+                                            if (!cleanText) return null;
+
+                                            return (
+                                                <div style={{ marginTop: 'var(--space-16)' }}>
+                                                    <div className="text-meta" style={{ fontWeight: 700, marginBottom: '4px' }}>{report.reported_by === 'police' ? 'OFFICER REMARKS' : 'CITIZEN REMARKS'}</div>
+                                                    <div style={{ fontSize: '14px', fontStyle: 'italic', color: 'var(--text-secondary)' }}>"{cleanText}"</div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
 
                                     {ai && (

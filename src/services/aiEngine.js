@@ -1,8 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const GEMINI_API_KEY = "AIzaSyBps6OFbZWZz8f8-rglibg1TD9dF6FZ0Wk";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const flashModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const SYSTEM_PROMPT = `You are a legal assistant for the Delhi RoadWatch app. Help users understand Delhi traffic rules, Motor Vehicles Act fines (updated 2024), and violation reporting procedures. Keep answers concise, formal, and helpful. Use bullet points for steps where appropriate.`;
 

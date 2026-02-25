@@ -6,12 +6,12 @@ import { createClient } from '@supabase/supabase-js';
 
 // ── Main DB (delhi-roadwatch) ──
 export const supabase = createClient(
-    'https://nucoxhrfojsvjrrvxqmc.supabase.co',
-    'sb_publishable_chwAmq0kxkOgWxIaddrAPQ__R5vyBnD'
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
 // ── Vahaan DB (vehicle registry simulation) ──
 export const vahaanDb = createClient(
-    'https://nibajbylccmzluppaesk.supabase.co',
-    'sb_publishable_hSgQLHFfh7yOdz33bYFELw_hHOPbjqb'
+    import.meta.env.VITE_VAHAAN_DB_URL,
+    import.meta.env.VITE_VAHAAN_DB_ANON_KEY
 );

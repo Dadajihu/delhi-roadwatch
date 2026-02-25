@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { createReport, CRIME_TYPES, STATUS, nextReportId, uploadEvidence } from '../../data/db';
+import { processReportWithAI } from '../../services/aiProcessor';
 
 // Icon map for violation types
 const CRIME_ICONS = {
@@ -32,6 +33,8 @@ export default function ReportViolation() {
     const [timestamp, setTimestamp] = useState(new Date().toLocaleTimeString());
     const [submittedId, setSubmittedId] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [aiProcessing, setAiProcessing] = useState(false);
+    const [aiDone, setAiDone] = useState(false);
 
     // Auto-fetch location & update clock
     useEffect(() => {
@@ -81,25 +84,37 @@ export default function ReportViolation() {
             }
 
             // 2. Create the Database Record with actual remote URLs
+            const photoTaken = mediaFiles.length > 0 ? mediaFiles[0].takenAt : null;
+            const photoTakenStr = photoTaken ? photoTaken.toLocaleString('en-IN') : '';
+
             const reportData = {
                 report_id: reportId,
                 citizen_id: currentUser.user_id,
-                reported_by: 'citizen',
+                reported_by: currentUser?.role === 'police' ? 'police' : 'citizen',
                 media_urls: uploadedUrls,
                 crime_type: crimeType,
-                comments: `${comments}${location ? `\n\n[Location: ${location}]` : ''}`,
+                comments: `${comments}${location ? `\n\n[Location: ${location}]` : ''}${photoTakenStr ? `\n[Photo Taken: ${photoTakenStr}]` : ''}`,
                 status: STATUS.SUBMITTED,
                 submission_time: submissionTime
             };
 
             await createReport(reportData);
 
-            // Show success IMMEDIATELY
+            // Show success screen IMMEDIATELY (non-blocking)
             setSubmittedId(reportId);
             setStep('confirmed');
 
-            // Note: Cloud AI Processing will now be triggered by Supabase Webhooks
-            // seamlessly on the backend, without hanging the user's browser!
+            // Run AI analysis in background (client-side)
+            if (uploadedUrls.length > 0) {
+                setAiProcessing(true);
+                setAiDone(false);
+                processReportWithAI(reportId, uploadedUrls[0], crimeType, comments)
+                    .then(() => { setAiProcessing(false); setAiDone(true); })
+                    .catch((err) => {
+                        console.error('[AI] Background processing failed:', err);
+                        setAiProcessing(false);
+                    });
+            }
 
         } catch (error) {
             console.error("Submission Error:", error);
@@ -141,7 +156,7 @@ export default function ReportViolation() {
             <div className="animate-up" style={{ maxWidth: '500px', margin: '0 auto', width: '100%' }}>
                 {renderStepper()}
 
-                <div style={{ textAlign: 'left', marginBottom: 'var(--space-24)' }}>
+                <div style={{ textAlign: 'center', marginBottom: 'var(--space-24)' }}>
                     <h1 style={{ fontSize: '32px', fontWeight: 800, color: '#1E293B', marginBottom: '12px' }}>Upload Evidence</h1>
                     <p style={{ color: '#64748B', fontSize: '15px', lineHeight: '1.6', fontWeight: 500 }}>
                         Please provide a clear photo or video of the traffic violation. Clear views of number plates help AI analysis.
@@ -278,7 +293,7 @@ export default function ReportViolation() {
             <div className="animate-up" style={{ maxWidth: '500px', margin: '0 auto', width: '100%' }}>
                 {renderStepper()}
 
-                <div style={{ textAlign: 'left', marginBottom: 'var(--space-24)' }}>
+                <div style={{ textAlign: 'center', marginBottom: 'var(--space-24)' }}>
                     <h1 style={{ fontSize: '32px', fontWeight: 800, color: '#1E293B', marginBottom: '12px' }}>Incident Details</h1>
                     <p style={{ color: '#64748B', fontSize: '15px', lineHeight: '1.6', fontWeight: 500 }}>
                         Categorize the violation and add any relevant remarks for the enforcement team.
@@ -347,7 +362,7 @@ export default function ReportViolation() {
             <div className="animate-up" style={{ maxWidth: '500px', margin: '0 auto', width: '100%' }}>
                 {renderStepper()}
 
-                <div style={{ textAlign: 'left', marginBottom: 'var(--space-24)' }}>
+                <div style={{ textAlign: 'center', marginBottom: 'var(--space-24)' }}>
                     <h1 style={{ fontSize: '32px', fontWeight: 800, color: '#1E293B', marginBottom: '12px' }}>Final Review</h1>
                     <p style={{ color: '#64748B', fontSize: '15px', lineHeight: '1.6', fontWeight: 500 }}>
                         Verify the incident data before official submission to the Delhi RoadWatch Cloud.
@@ -396,13 +411,30 @@ export default function ReportViolation() {
             <div className="card text-center" style={{ maxWidth: '440px', padding: 'var(--space-40)', borderRadius: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
                 <div style={{ width: '80px', height: '80px', background: 'var(--success-light)', color: 'var(--success)', fontSize: '40px', margin: '0 auto var(--space-24)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
                 <h2 style={{ marginBottom: 'var(--space-16)', fontSize: '28px', fontWeight: 800, textAlign: 'center' }}>Incident Logged</h2>
-                <p className="text-body" style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-32)', fontSize: '15px', textAlign: 'center' }}>
+                <p className="text-body" style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-16)', fontSize: '15px', textAlign: 'center' }}>
                     Case Ref: <strong style={{ color: 'var(--text-primary)' }}>#{submittedId.slice(0, 8)}</strong> has been successfully archived with encrypted GPS coordinates and timestamps.
                 </p>
 
+                {/* AI Processing Status */}
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '10px 18px', borderRadius: '12px', marginBottom: 'var(--space-24)',
+                    background: aiDone ? 'rgba(16,185,129,0.08)' : aiProcessing ? 'rgba(37,99,235,0.08)' : 'var(--bg-main)',
+                    border: `1px solid ${aiDone ? 'rgba(16,185,129,0.2)' : aiProcessing ? 'rgba(37,99,235,0.2)' : 'var(--border-color)'}`
+                }}>
+                    {aiProcessing && (
+                        <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid var(--primary-light)', borderTopColor: 'var(--primary)', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                    )}
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: aiDone ? '#10B981' : aiProcessing ? 'var(--primary)' : 'var(--text-muted)' }}>
+                        {aiDone ? '✓ AI Analysis Complete — visible in admin panel'
+                            : aiProcessing ? 'AI Engine analysing evidence…'
+                                : '⏳ AI analysis will run shortly'}
+                    </span>
+                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-12)' }}>
                     <button className="btn btn-primary" style={{ width: '100%', padding: '16px', borderRadius: '16px' }} onClick={() => { setStep('capture'); setMediaFiles([]); setCrimeType(''); setComments(''); }}>New Report</button>
-                    <button className="btn btn-secondary" style={{ width: '100%', padding: '16px', borderRadius: '16px' }} onClick={() => navigate('/citizen/my-reports')}>History</button>
+                    <button className="btn btn-secondary" style={{ width: '100%', padding: '16px', borderRadius: '16px' }} onClick={() => navigate(currentUser?.role === 'police' ? '/police/my-reports' : '/citizen/my-reports')}>History</button>
                 </div>
             </div>
         </div>

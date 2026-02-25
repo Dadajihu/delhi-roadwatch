@@ -74,7 +74,9 @@ function DashboardLayout() {
   ];
 
   const policeLinks = [
-    { to: '/police', label: 'Review' },
+    { to: '/police', label: 'Overview' },
+    { to: '/police/report', label: 'Capture' },
+    { to: '/police/my-reports', label: 'History' },
   ];
 
   const links = currentUser?.role === 'citizen' ? citizenLinks
@@ -186,7 +188,9 @@ function DashboardLayout() {
             <Route path="/citizen/my-reports" element={<ProtectedRoute allowedRoles={['citizen']}><MyReports /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
             <Route path="/admin/notifications" element={<ProtectedRoute allowedRoles={['admin']}><NotificationsPanel /></ProtectedRoute>} />
-            <Route path="/police" element={<ProtectedRoute allowedRoles={['police']}><PoliceDashboard /></ProtectedRoute>} />
+            <Route path="/police" element={<ProtectedRoute allowedRoles={['police']}><CitizenHome /></ProtectedRoute>} />
+            <Route path="/police/report" element={<ProtectedRoute allowedRoles={['police']}><ReportViolation /></ProtectedRoute>} />
+            <Route path="/police/my-reports" element={<ProtectedRoute allowedRoles={['police']}><MyReports /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to={currentUser?.role === 'citizen' ? '/citizen' : currentUser?.role === 'admin' ? '/admin' : '/police'} replace />} />
           </Routes>
         </div>

@@ -12,7 +12,8 @@ import {
 } from '../data/db';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const GEMINI_API_KEY = "AIzaSyDQoTRBPihhoyvNT3KrojvirAoiMnwpSk8";
+// For notifications, we use the same Gemini key but you could also separate it 
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY_ALT || import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 

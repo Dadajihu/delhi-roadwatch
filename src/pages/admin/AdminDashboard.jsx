@@ -6,17 +6,29 @@ import { useState, useEffect } from 'react';
 import { fetchReports, fetchAllAiAnalysis, updateReportStatus, updateCaseStatus, deleteReport, STATUS } from '../../data/db';
 import { notifyOwner } from '../../services/notificationService';
 import { textToSpeech, translateText, playBase64Audio, SUPPORTED_LANGUAGES } from '../../services/sarvamService';
+import { rerunAIAnalysis } from '../../services/aiProcessor';
 
 /* ── Helpers ── */
 
-// Parse "[Location: lat, lng]" out of a comment string
-function parseLocation(comment = '') {
-    const match = comment.match(/\[Location:\s*([-\d.]+),\s*([-\d.]+)\]/);
-    if (!match) return { lat: null, lng: null, text: comment.trim() };
-    const lat = parseFloat(match[1]);
-    const lng = parseFloat(match[2]);
-    const text = comment.replace(match[0], '').trim();
-    return { lat, lng, text };
+function parseCommentMetadata(comment = '') {
+    let text = comment;
+
+    const locMatch = text.match(/\[Location:\s*([-\d.]+),\s*([-\d.]+)\]/);
+    let lat = null, lng = null;
+    if (locMatch) {
+        lat = parseFloat(locMatch[1]);
+        lng = parseFloat(locMatch[2]);
+        text = text.replace(locMatch[0], '');
+    }
+
+    const dateMatch = text.match(/\[Photo Taken:\s*([^\]]+)\]/);
+    let photoTaken = null;
+    if (dateMatch) {
+        photoTaken = dateMatch[1];
+        text = text.replace(dateMatch[0], '');
+    }
+
+    return { lat, lng, photoTaken, text: text.trim() };
 }
 
 function MapsLink({ lat, lng }) {
@@ -103,6 +115,7 @@ export default function AdminDashboard() {
     const [translatingId, setTranslatingId] = useState(null);
     const [translations, setTranslations] = useState({}); // { reportId: { text, lang, srcLang, isOriginal } }
     const [srcLangs, setSrcLangs] = useState({}); // { reportId: langCode } — source language per report
+    const [rerunningIds, setRerunningIds] = useState({}); // { reportId: true } while AI is re-running
 
     const loadData = async () => {
         setLoading(true);
@@ -190,12 +203,10 @@ export default function AdminDashboard() {
             return true;
         })
         .sort((a, b) => {
-            const aiA = aiData.find(x => x.report_id === a.report_id);
-            const aiB = aiData.find(x => x.report_id === b.report_id);
-            // Submitted with no AI data sorts to top (most urgent)
-            const scoreA = a.status === STATUS.SUBMITTED && !aiA ? 500 : getPriorityScore(a, aiA);
-            const scoreB = b.status === STATUS.SUBMITTED && !aiB ? 500 : getPriorityScore(b, aiB);
-            return scoreB - scoreA;
+            // Primary sort: newest submission first
+            const timeA = new Date(a.submission_time).getTime();
+            const timeB = new Date(b.submission_time).getTime();
+            return timeB - timeA;
         });
 
     const withAction = async (reportId, fn) => {
@@ -233,6 +244,24 @@ export default function AdminDashboard() {
         });
     };
 
+    // ✅ Re-run AI analysis for any existing report (admin can trigger manually)
+    const handleRerunAI = async (report) => {
+        if (!report.media_urls?.[0]) {
+            alert('This report has no media attached for AI analysis.');
+            return;
+        }
+        setRerunningIds(prev => ({ ...prev, [report.report_id]: true }));
+        try {
+            await rerunAIAnalysis(report);
+            await loadData(); // refresh dashboard
+        } catch (err) {
+            console.error('[RERUN] Failed:', err);
+            alert('AI Re-analysis failed: ' + err.message);
+        } finally {
+            setRerunningIds(prev => ({ ...prev, [report.report_id]: false }));
+        }
+    };
+
     if (loading) return (
         <div style={{ padding: '120px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid var(--primary-light)', borderTopColor: 'var(--primary)', animation: 'spin 0.8s linear infinite' }} />
@@ -243,10 +272,10 @@ export default function AdminDashboard() {
     return (
         <div className="animate-up" style={{ width: '100%', maxWidth: '1080px', margin: '0 auto' }}>
             {/* ── Header ── */}
-            <header className="admin-page-header">
+            <header className="admin-page-header" style={{ textAlign: 'center' }}>
                 <h1 style={{ fontSize: '30px', fontWeight: 900, letterSpacing: '-0.04em', color: 'var(--text-primary)' }}>Command Center</h1>
-                <p style={{ fontWeight: 500 }}>Cases are ranked by AI confidence minus deepfake probability</p>
-                <div className="admin-header-status" style={{ background: 'white', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '7px 16px', display: 'inline-flex' }}>
+                <p style={{ fontWeight: 500, margin: '8px 0' }}>Cases are ranked by AI confidence minus deepfake probability</p>
+                <div className="admin-header-status" style={{ background: 'white', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '7px 16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 6px #10B981' }} />
                     <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>AI Engine Live</span>
                 </div>
@@ -303,11 +332,13 @@ export default function AdminDashboard() {
                     const isExpanded = !!expandedIds[report.report_id];
                     const isActing = !!actionLoading[report.report_id];
                     const priorityScore = getPriorityScore(report, ai);
+                    // ✅ FIX: look up translation from state map for this specific report
+                    const translation = translations[report.report_id] || null;
 
                     // Badge
                     let rankColor = '#94A3B8', rankLabel = 'Standard', rankBg = 'rgba(148,163,184,0.1)';
                     if (index < 3 && priorityScore > 50) { rankColor = '#F59E0B'; rankLabel = 'High Priority'; rankBg = 'rgba(245,158,11,0.08)'; }
-                    if (isPolice) { rankColor = '#6366F1'; rankLabel = 'Official'; rankBg = 'rgba(99,102,241,0.08)'; }
+                    if (isPolice) { rankColor = '#6366F1'; rankLabel = 'Police Reported'; rankBg = 'rgba(99,102,241,0.08)'; }
                     if ((ai?.ai_generated_score || 0) > 60) { rankColor = '#EF4444'; rankLabel = 'Suspect Fake'; rankBg = 'rgba(239,68,68,0.08)'; }
 
                     const statusColor = report.status.includes('Accepted') || report.status.includes('Confirmed') ? '#10B981'
@@ -317,7 +348,7 @@ export default function AdminDashboard() {
                     const confScore = ai?.confidence_score ?? null;
                     const fakeScore = ai?.ai_generated_score ?? null;
 
-                    const { lat, lng, text: cleanComment } = parseLocation(report.comments || '');
+                    const { lat, lng, photoTaken, text: cleanComment } = parseCommentMetadata(report.comments || '');
                     const { verdict, meta, comments: aiComments } = parseAiSummary(ai?.ai_summary || '');
 
                     return (
@@ -386,24 +417,18 @@ export default function AdminDashboard() {
 
                                 {/* Row 2: Score bars (always visible) */}
                                 <div className="admin-score-bars" style={{ paddingTop: '4px' }}>
-                                    {isPolice ? (
-                                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#6366F1', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span>🔵</span> Official Police Report — No AI scan required
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <ScoreBar
-                                                value={confScore}
-                                                color={confScore === null ? '#94A3B8' : confScore > 70 ? '#10B981' : confScore > 40 ? '#F59E0B' : '#EF4444'}
-                                                label="AI Confidence"
-                                            />
-                                            <ScoreBar
-                                                value={fakeScore}
-                                                color={fakeScore === null ? '#94A3B8' : fakeScore > 60 ? '#EF4444' : fakeScore > 30 ? '#F59E0B' : '#10B981'}
-                                                label="Deepfake Risk"
-                                            />
-                                        </>
-                                    )}
+                                    <>
+                                        <ScoreBar
+                                            value={confScore}
+                                            color={confScore === null ? '#94A3B8' : confScore > 70 ? '#10B981' : confScore > 40 ? '#F59E0B' : '#EF4444'}
+                                            label="AI Score"
+                                        />
+                                        <ScoreBar
+                                            value={fakeScore}
+                                            color={fakeScore === null ? '#94A3B8' : fakeScore > 60 ? '#EF4444' : fakeScore > 30 ? '#F59E0B' : '#10B981'}
+                                            label="Deepfake Risk"
+                                        />
+                                    </>
                                 </div>
                             </div>
 
@@ -419,7 +444,7 @@ export default function AdminDashboard() {
                                             <div style={{ background: 'white', borderRadius: '16px', padding: '18px', border: '1px solid var(--border-color)' }}>
                                                 <div style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                        <span>💬</span> Citizen Report
+                                                        <span>💬</span> {isPolice ? 'Police Report' : 'Citizen Report'}
                                                     </div>
                                                     <div style={{ display: 'flex', gap: '8px' }}>
                                                         {/* TTS Button */}
@@ -471,7 +496,7 @@ export default function AdminDashboard() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                
+
                                                 {translatingId === report.report_id ? (
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 600 }}>
                                                         <div className="sarvam-spinner-small"></div> Translating...
@@ -508,29 +533,93 @@ export default function AdminDashboard() {
                                                         </div>
                                                     </div>
                                                 )}
+                                                {photoTaken && (
+                                                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: (lat && lng) ? 'none' : '1px dashed var(--border-color)' }}>
+                                                        <div style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>
+                                                            📸 Photo Taken At
+                                                        </div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', background: 'var(--bg-main)', padding: '4px 10px', borderRadius: '6px' }}>
+                                                                {photoTaken}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* AI Analysis Panel */}
                                             {!isPolice && ai ? (
                                                 <div style={{ background: 'white', borderRadius: '16px', border: '1px solid rgba(37,99,235,0.15)', overflow: 'hidden' }}>
                                                     {/* AI Header */}
-                                                    <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg, #EFF6FF, #F0F4FF)', borderBottom: '1px solid rgba(37,99,235,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg, #EFF6FF, #F0F4FF)', borderBottom: '1px solid rgba(37,99,235,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                                                         <div style={{ fontSize: '11px', fontWeight: 900, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                             <div style={{ width: '7px', height: '7px', background: 'var(--primary)', borderRadius: '50%', boxShadow: '0 0 5px var(--primary)' }} />
                                                             AI VERIFICATION LAYER
                                                         </div>
-                                                        {verdict && (
-                                                            <div style={{ fontSize: '10px', fontWeight: 900, padding: '4px 10px', borderRadius: '7px', background: meta.bg, color: meta.text, letterSpacing: '0.04em' }}>
-                                                                {meta.label}
-                                                            </div>
-                                                        )}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            {verdict && (
+                                                                <div style={{ fontSize: '10px', fontWeight: 900, padding: '4px 10px', borderRadius: '7px', background: meta.bg, color: meta.text, letterSpacing: '0.04em' }}>
+                                                                    {meta.label}
+                                                                </div>
+                                                            )}
+                                                            {/* ✅ Re-run AI button */}
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleRerunAI(report); }}
+                                                                disabled={!!rerunningIds[report.report_id]}
+                                                                style={{
+                                                                    display: 'flex', alignItems: 'center', gap: '5px',
+                                                                    padding: '5px 12px', borderRadius: '8px',
+                                                                    border: '1px solid rgba(37,99,235,0.3)',
+                                                                    background: rerunningIds[report.report_id] ? 'var(--primary)' : 'white',
+                                                                    color: rerunningIds[report.report_id] ? 'white' : 'var(--primary)',
+                                                                    fontSize: '10px', fontWeight: 800,
+                                                                    cursor: rerunningIds[report.report_id] ? 'wait' : 'pointer',
+                                                                    textTransform: 'uppercase', letterSpacing: '0.04em',
+                                                                    transition: 'all 0.2s ease', whiteSpace: 'nowrap'
+                                                                }}
+                                                            >
+                                                                {rerunningIds[report.report_id] ? (
+                                                                    <>
+                                                                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: 'white', animation: 'spin 0.8s linear infinite' }} />
+                                                                        Analysing…
+                                                                    </>
+                                                                ) : <>🔄 Re-run AI</>}
+                                                            </button>
+                                                        </div>
                                                     </div>
 
-                                                    <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                    <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
+                                                        {/* Spinner overlay while re-running */}
+                                                        {rerunningIds[report.report_id] && (
+                                                            <div style={{
+                                                                position: 'absolute', inset: 0, background: 'rgba(239,246,255,0.9)',
+                                                                backdropFilter: 'blur(2px)', zIndex: 10,
+                                                                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                                                justifyContent: 'center', gap: '10px', minHeight: '160px', borderRadius: '0 0 12px 12px'
+                                                            }}>
+                                                                <div style={{ width: '36px', height: '36px', borderRadius: '50%', border: '3px solid var(--primary-light)', borderTopColor: 'var(--primary)', animation: 'spin 0.8s linear infinite' }} />
+                                                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)' }}>Gemini + Sightengine analysing…</div>
+                                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'center', maxWidth: '260px' }}>Detecting number plate · scoring violation · checking deepfake risk</div>
+                                                            </div>
+                                                        )}
+                                                        {/* Banner when never analysed */}
+                                                        {!rerunningIds[report.report_id] && (ai.confidence_score === 0 || ai.confidence_score == null) && (!ai.detected_vehicle_number || ai.detected_vehicle_number === 'UNKNOWN') && (
+                                                            <div style={{
+                                                                display: 'flex', alignItems: 'flex-start', gap: '10px',
+                                                                padding: '12px 14px', borderRadius: '10px',
+                                                                background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)'
+                                                            }}>
+                                                                <span style={{ fontSize: '16px', flexShrink: 0 }}>⚡</span>
+                                                                <div>
+                                                                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#B45309' }}>AI analysis not yet run for this report</div>
+                                                                    <div style={{ fontSize: '11px', color: '#92400E', fontWeight: 500, marginTop: '2px' }}>Click <strong>"🔄 Re-run AI"</strong> to extract the number plate, confidence &amp; deepfake scores from the evidence.</div>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                         {/* Score Cards Row */}
                                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                                             <div style={{ background: 'var(--bg-main)', borderRadius: '12px', padding: '14px', textAlign: 'center' }}>
-                                                                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>AI Confidence</div>
+                                                                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>AI Score</div>
                                                                 <div style={{
                                                                     fontSize: '28px', fontWeight: 900, letterSpacing: '-0.02em',
                                                                     color: (ai.confidence_score || 0) > 70 ? '#10B981' : (ai.confidence_score || 0) > 40 ? '#F59E0B' : '#EF4444'
@@ -551,20 +640,25 @@ export default function AdminDashboard() {
                                                             </div>
                                                         </div>
 
-                                                        {/* Detected Plate */}
-                                                        {ai.detected_vehicle_number && (
-                                                            <div style={{ background: '#F8FAFF', border: '1px solid rgba(37,99,235,0.12)', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                <div>
-                                                                    <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Detected Plate</div>
-                                                                    <div style={{ fontWeight: 900, fontSize: '22px', letterSpacing: '0.12em', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
-                                                                        {ai.detected_vehicle_number}
-                                                                    </div>
-                                                                </div>
-                                                                <div style={{ fontSize: '13px', fontWeight: 800, color: '#10B981', background: 'rgba(16,185,129,0.1)', padding: '6px 12px', borderRadius: '8px' }}>
-                                                                    {ai.confidence_score}% match
+                                                        {/* Detected Number Plate — always shown */}
+                                                        <div style={{ background: '#F8FAFF', border: '1px solid rgba(37,99,235,0.12)', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <div>
+                                                                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>🔍 Detected Number Plate</div>
+                                                                <div style={{
+                                                                    fontWeight: 900, fontSize: '22px', letterSpacing: '0.12em', fontFamily: 'monospace',
+                                                                    color: (ai.detected_vehicle_number && ai.detected_vehicle_number !== 'UNKNOWN' && ai.detected_vehicle_number !== 'REVIEW REQUIRED') ? 'var(--text-primary)' : '#94A3B8'
+                                                                }}>
+                                                                    {ai.detected_vehicle_number || 'NOT DETECTED'}
                                                                 </div>
                                                             </div>
-                                                        )}
+                                                            <div style={{
+                                                                fontSize: '12px', fontWeight: 800, padding: '6px 12px', borderRadius: '8px',
+                                                                color: (ai.detected_vehicle_number && ai.detected_vehicle_number !== 'UNKNOWN' && ai.detected_vehicle_number !== 'REVIEW REQUIRED') ? '#10B981' : '#94A3B8',
+                                                                background: (ai.detected_vehicle_number && ai.detected_vehicle_number !== 'UNKNOWN' && ai.detected_vehicle_number !== 'REVIEW REQUIRED') ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)'
+                                                            }}>
+                                                                {(ai.detected_vehicle_number && ai.detected_vehicle_number !== 'UNKNOWN' && ai.detected_vehicle_number !== 'REVIEW REQUIRED') ? 'AI Extracted' : 'Run AI →'}
+                                                            </div>
+                                                        </div>
 
                                                         {/* AI Comments */}
                                                         {aiComments && (

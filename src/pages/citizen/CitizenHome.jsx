@@ -37,12 +37,12 @@ export default function CitizenHome() {
         <div className="mobile-view-container" style={{ maxWidth: '480px', margin: '0 auto' }}>
             <header style={{
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent: 'center',
                 alignItems: 'center',
                 marginBottom: 'var(--space-24)',
                 paddingTop: 'var(--space-8)'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}>
                     <div className="icon-container" style={{ width: '32px', height: '32px', background: 'var(--info-light)', color: 'var(--info)', fontSize: '14px' }}>📍</div>
                     <div>
                         <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1 }}>Location</div>
@@ -52,8 +52,8 @@ export default function CitizenHome() {
             </header>
 
             {/* 2. Greeting Area */}
-            <section style={{ marginBottom: 'var(--space-24)' }} className="animate-up">
-                <h1 className="text-hero" style={{ marginBottom: '4px' }}>Jai Hind, {currentUser?.name?.split(' ')[0]}</h1>
+            <section style={{ marginBottom: 'var(--space-24)', textAlign: 'center' }} className="animate-up">
+                <h1 className="text-hero" style={{ marginBottom: '4px' }}>{currentUser?.role === 'police' ? 'Jai Hind, Officer' : `Jai Hind, ${currentUser?.name?.split(' ')[0]}`}</h1>
                 <p className="text-meta" style={{ fontSize: '15px' }}>Road safety starts with you. Keep Delhi moving.</p>
             </section>
 
@@ -75,7 +75,7 @@ export default function CitizenHome() {
                         <h2 style={{ marginBottom: '8px' }}>Report Violation</h2>
                         <p className="text-meta" style={{ marginBottom: 'var(--space-24)', maxWidth: '280px' }}>Upload clear photos or videos of traffic rule breakers for AI verification.</p>
 
-                        <button className="btn btn-primary" style={{ width: '100%', padding: '16px' }} onClick={() => navigate('/citizen/report')}>
+                        <button className="btn btn-primary" style={{ width: '100%', padding: '16px' }} onClick={() => navigate(currentUser?.role === 'police' ? '/police/report' : '/citizen/report')}>
                             Open Camera & Report
                         </button>
                     </div>
@@ -84,16 +84,16 @@ export default function CitizenHome() {
 
             {/* 4. Status Stats (Resolved / Pending) */}
             <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-16)', marginBottom: 'var(--space-24)' }} className="animate-up delay-2">
-                <div className="card" style={{ padding: 'var(--space-16)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="card" style={{ padding: 'var(--space-16)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                     <div className="icon-container" style={{ width: '40px', height: '40px', background: 'var(--success-light)', color: 'var(--success)', fontSize: '18px' }}>✓</div>
-                    <div>
+                    <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '20px', fontWeight: 800, lineHeight: 1 }}>{resolvedCount}</div>
                         <div className="text-meta" style={{ fontSize: '12px', fontWeight: 600 }}>RESOLVED</div>
                     </div>
                 </div>
-                <div className="card" style={{ padding: 'var(--space-16)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="card" style={{ padding: 'var(--space-16)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                     <div className="icon-container" style={{ width: '40px', height: '40px', background: 'var(--warning-light)', color: 'var(--warning)', fontSize: '18px' }}>🕒</div>
-                    <div>
+                    <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '20px', fontWeight: 800, lineHeight: 1 }}>{pendingCount}</div>
                         <div className="text-meta" style={{ fontSize: '12px', fontWeight: 600 }}>PENDING</div>
                     </div>
