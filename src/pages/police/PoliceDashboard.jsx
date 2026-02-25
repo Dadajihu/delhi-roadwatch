@@ -2,7 +2,7 @@
    Delhi RoadWatch — Police Dashboard (Report Only, Supabase)
    ────────────────────────────────────────────── */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { createReport, fetchReports, CRIME_TYPES, STATUS, nextReportId } from '../../data/db';
 
@@ -16,6 +16,82 @@ export default function PoliceDashboard() {
     const [comments, setComments] = useState('');
     const [submittedId, setSubmittedId] = useState('');
     const [submitting, setSubmitting] = useState(false);
+
+    const [voiceMode, setVoiceMode] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const [selectedLang, setSelectedLang] = useState('hi-IN');
+    const [voiceError, setVoiceError] = useState('');
+
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const timerRef = useRef(null);
+
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop();
+            }
+        };
+    }, []);
+
+    const startRecording = async () => {
+        setVoiceError('');
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+            const recorder = new MediaRecorder(stream, { mimeType });
+            mediaRecorderRef.current = recorder;
+            audioChunksRef.current = [];
+            recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+            recorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+                await transcribeAudioCore(audioBlob);
+            };
+            recorder.start(250);
+            setIsRecording(true);
+            setRecordingTime(0);
+            timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+        } catch (err) {
+            setVoiceError('Could not access microphone.');
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        clearInterval(timerRef.current);
+        setIsRecording(false);
+    };
+
+    const transcribeAudioCore = async (audioBlob) => {
+        setIsTranscribing(true);
+        setVoiceError('');
+        try {
+            const { transcript } = await speechToText(audioBlob, selectedLang);
+            if (transcript) {
+                setComments(prev => prev ? `${prev}
+${transcript}` : transcript);
+            } else {
+                setVoiceError('No speech detected.');
+            }
+        } catch (err) {
+            setVoiceError(err.message || 'Transcription failed.');
+        } finally {
+            setIsTranscribing(false);
+        }
+    };
+
+    const formatTime = (secs) => {
+        const m = Math.floor(secs / 60).toString().padStart(2, '0');
+        const s = (secs % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    };
+
     const [myReportsCount, setMyReportsCount] = useState(0);
 
     useEffect(() => {

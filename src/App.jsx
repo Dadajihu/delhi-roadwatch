@@ -13,6 +13,7 @@ import CitizenHome from './pages/citizen/CitizenHome';
 import ReportViolation from './pages/citizen/ReportViolation';
 import MyReports from './pages/citizen/MyReports';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import LegalFAQBot from './pages/shared/LegalFAQBot';
 import PoliceDashboard from './pages/police/PoliceDashboard';
 import NotificationsPanel from './components/NotificationsPanel';
 
