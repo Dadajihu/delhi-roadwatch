@@ -5,8 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { createReport, CRIME_TYPES, STATUS, nextReportId } from '../../data/db';
-import { processReport } from '../../services/aiEngine';
+import { createReport, CRIME_TYPES, STATUS, nextReportId, uploadEvidence } from '../../data/db';
 
 // Icon map for violation types
 const CRIME_ICONS = {
@@ -69,14 +68,24 @@ export default function ReportViolation() {
         setSubmitting(true);
         try {
             const reportId = nextReportId();
-            const mediaNames = mediaFiles.map(m => m.name);
             const submissionTime = new Date().toISOString();
 
+            // 1. Upload all media to Supabase Storage first to get Public URLs
+            const uploadedUrls = [];
+            for (let i = 0; i < mediaFiles.length; i++) {
+                const { file, name } = mediaFiles[i];
+                const fileExt = name.split('.').pop();
+                const randomName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const publicUrl = await uploadEvidence(file, `${reportId}/${randomName}`);
+                uploadedUrls.push(publicUrl);
+            }
+
+            // 2. Create the Database Record with actual remote URLs
             const reportData = {
                 report_id: reportId,
                 citizen_id: currentUser.user_id,
                 reported_by: 'citizen',
-                media_urls: mediaNames,
+                media_urls: uploadedUrls,
                 crime_type: crimeType,
                 comments: `${comments}${location ? `\n\n[Location: ${location}]` : ''}`,
                 status: STATUS.SUBMITTED,
@@ -85,19 +94,16 @@ export default function ReportViolation() {
 
             await createReport(reportData);
 
-            // Show success IMMEDIATELY — don't wait for AI
+            // Show success IMMEDIATELY
             setSubmittedId(reportId);
             setStep('confirmed');
 
-            // Run AI processing in the BACKGROUND (non-blocking)
-            const firstImage = mediaFiles.find(m => m.type.startsWith('image'))?.file;
-            processReport(reportData, firstImage).catch(err => {
-                console.error("Background AI Error (non-critical):", err);
-            });
+            // Note: Cloud AI Processing will now be triggered by Supabase Webhooks
+            // seamlessly on the backend, without hanging the user's browser!
 
         } catch (error) {
             console.error("Submission Error:", error);
-            alert("Digital sync failed. Please check your connection.");
+            alert("Digital sync failed. Please check your connection or wait a moment.");
         } finally {
             setSubmitting(false);
         }

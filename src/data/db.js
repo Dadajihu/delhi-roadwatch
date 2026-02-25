@@ -130,6 +130,19 @@ export async function deleteReport(reportId) {
   if (error) throw error;
 }
 
+export async function uploadEvidence(file, filename) {
+  const { data, error } = await supabase.storage
+    .from('evidence')
+    .upload(filename, file, { cacheControl: '3600', upsert: false });
+  if (error) throw error;
+
+  const { data: publicUrlData } = supabase.storage
+    .from('evidence')
+    .getPublicUrl(filename);
+
+  return publicUrlData.publicUrl;
+}
+
 // ═══════════════════════════════════════
 //  AI ANALYSIS QUERIES
 // ═══════════════════════════════════════

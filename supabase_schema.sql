@@ -1,7 +1,17 @@
 -- =====================================================
 -- Delhi RoadWatch — Supabase Schema + Seed Data
--- Run this in Supabase SQL Editor (Dashboard → SQL Editor → New Query)
 -- =====================================================
+
+-- ── 0. CREATE STORAGE BUCKET FOR DIGITAL EVIDENCE ──
+insert into storage.buckets (id, name, public) 
+values ('evidence', 'evidence', true) 
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow public uploads and reads for demo
+drop policy if exists "Allow public uploads" on storage.objects;
+drop policy if exists "Allow public downloads" on storage.objects;
+create policy "Allow public uploads" on storage.objects for insert with check (bucket_id = 'evidence');
+create policy "Allow public downloads" on storage.objects for select using (bucket_id = 'evidence');
 
 -- ── 1. USERS TABLE (Citizens) ──
 CREATE TABLE IF NOT EXISTS users (
@@ -115,14 +125,30 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE violations ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations for demo (anon key)
+DROP POLICY IF EXISTS "Allow all for demo" ON users;
 CREATE POLICY "Allow all for demo" ON users FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for demo" ON police;
 CREATE POLICY "Allow all for demo" ON police FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for demo" ON admins;
 CREATE POLICY "Allow all for demo" ON admins FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for demo" ON reports;
 CREATE POLICY "Allow all for demo" ON reports FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for demo" ON ai_analysis;
 CREATE POLICY "Allow all for demo" ON ai_analysis FOR ALL USING (true) WITH CHECK (true);
+
 -- vehicle_registry policy is in Vahaan DB (separate project)
+
+DROP POLICY IF EXISTS "Allow all for demo" ON case_status;
 CREATE POLICY "Allow all for demo" ON case_status FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for demo" ON notifications;
 CREATE POLICY "Allow all for demo" ON notifications FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for demo" ON violations;
 CREATE POLICY "Allow all for demo" ON violations FOR ALL USING (true) WITH CHECK (true);
 
 
@@ -142,7 +168,8 @@ INSERT INTO users (role, name, email, phone, aadhaar, aadhaar_verified, password
 ('citizen', 'Deepak Verma',   'deepak@demo.com',   '9876543216', '789012345678', true, 'citizen123'),
 ('citizen', 'Kavita Rao',     'kavita@demo.com',   '9876543217', '890123456789', true, 'citizen123'),
 ('citizen', 'Manish Jain',    'manish@demo.com',   '9876543218', '901234567890', true, 'citizen123'),
-('citizen', 'Sunita Devi',    'sunita@demo.com',   '9876543219', '012345678901', true, 'citizen123');
+('citizen', 'Sunita Devi',    'sunita@demo.com',   '9876543219', '012345678901', true, 'citizen123')
+ON CONFLICT DO NOTHING;
 
 -- ── 10 Police ──
 -- Test credential shown on login: POL001 / police123
@@ -156,7 +183,8 @@ INSERT INTO police (police_id, name, phone, email, password_hash) VALUES
 ('POL007', 'Inspector Vikram Chauhan',   '9911000007', 'vikram.pol@demo.com',  'police123'),
 ('POL008', 'SI Ritu Malhotra',           '9911000008', 'ritu.pol@demo.com',    'police123'),
 ('POL009', 'Inspector Kiran Bedi',       '9911000009', 'kiran.pol@demo.com',   'police123'),
-('POL010', 'SI Arjun Kapoor',            '9911000010', 'arjun.pol@demo.com',   'police123');
+('POL010', 'SI Arjun Kapoor',            '9911000010', 'arjun.pol@demo.com',   'police123')
+ON CONFLICT DO NOTHING;
 
 -- ── 10 Admins ──
 -- Test credential shown on login: ADM001 / admin123
@@ -170,7 +198,8 @@ INSERT INTO admins (admin_id, name, email, password_hash) VALUES
 ('ADM007', 'Admin Prakash Joshi',    'prakash.adm@demo.com',  'admin123'),
 ('ADM008', 'Admin Nandini Reddy',    'nandini.adm@demo.com',  'admin123'),
 ('ADM009', 'Admin Amit Tiwari',      'amit.adm@demo.com',     'admin123'),
-('ADM010', 'Admin Divya Kapoor',     'divya.adm@demo.com',    'admin123');
+('ADM010', 'Admin Divya Kapoor',     'divya.adm@demo.com',    'admin123')
+ON CONFLICT DO NOTHING;
 
 -- Vehicle Registry seed data is in Vahaan DB (see vahaan_schema.sql)
 
